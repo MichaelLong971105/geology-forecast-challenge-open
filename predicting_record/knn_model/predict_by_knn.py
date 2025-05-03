@@ -1,25 +1,26 @@
 import os
 import numpy as np
 import pandas as pd
-from submission_record import prepare_submission
+from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_squared_error
 from sklearn.neighbors import KNeighborsRegressor
-from sklearn.model_selection import train_test_split, KFold
+from sklearn.model_selection import KFold
 from datetime import datetime
+
+from submission_record import prepare_submission
 
 
 def clean_input(X):
     return pd.DataFrame(X).interpolate(axis=1).bfill(axis=1).ffill(axis=1).to_numpy()
 
 
-def find_best_k_metric(max_k, metric_list, X_train, y_train, n_splits=5):
+def find_best_parameter(max_k, metric_list, X_train, y_train, n_splits=5):
     result_list = []
     kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
-
+    print("Looking for the parameter combination with the smallest MSE...")
     for k in range(1, max_k + 1):
         for metric in metric_list:
             mse_fold = []
-
             for train_index, val_index in kf.split(X_train):
                 X_tr, X_val = X_train[train_index], X_train[val_index]
                 y_tr, y_val = y_train[train_index], y_train[val_index]
@@ -32,52 +33,57 @@ def find_best_k_metric(max_k, metric_list, X_train, y_train, n_splits=5):
             avg_mse = np.mean(mse_fold)
             result_list.append((metric, k, avg_mse))
 
-    # 找出 MSE 最小的组合
+    # Find the combination with the smallest MSE
     best_result = min(result_list, key=lambda x: x[2])
-    print(f"\nBest k and metric: metric={best_result[0]}, k={best_result[1]}, MSE={best_result[2]:.5f}")
+    print(f"\nBest Parameter: metric={best_result[0]}, k={best_result[1]}, MSE={best_result[2]:.5f}")
 
     return best_result
 
 
-# 设置路径
-BASE_DIR = os.path.dirname(__file__)
 DATA_DIR = "../../data"
-train_dataset = "train_merged.csv"
+# train_dataset = "train_merged.csv"  # use the dataset which merge train.csv and train_2.csv
+# train_dataset = "train.csv"  # use the original dataset train.csv
+train_dataset = "train_raw.csv"  # use the dataset train.csv which is built by 'interpolate_and_split.py'
 
-# 加载合并训练集
+# Loading training dataset
 train_df = pd.read_csv(os.path.join(DATA_DIR, train_dataset))
 
-# 构造输入输出
+# Construct input and output datasets
 X_train = train_df.loc[:, [str(i) for i in range(-299, 1)]].to_numpy(dtype=np.float32)
 y_train = train_df.loc[:, [str(i) for i in range(1, 301)]].to_numpy(dtype=np.float32)
 
-# 检查并清洗缺失值
+# Check and clean missing values
 X_train = clean_input(X_train)
 y_train = clean_input(y_train)
 
-# 加载测试集
+# Data Normalization
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+
+# Loading testing dataset
 test_df = pd.read_csv(os.path.join(DATA_DIR, "test.csv"))
 X_test = test_df.loc[:, [str(i) for i in range(-299, 1)]].to_numpy(dtype=np.float32)
 
-# 缺失值处理（插值 + 前后向填充）
+# Check and clean missing values
 X_test = clean_input(X_test)
 
-X_train_sub, X_val, y_train_sub, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=42)
+# Data Normalization
+X_test = scaler.transform(X_test)
 
-final_k_metric = find_best_k_metric(100, ['euclidean', 'manhattan', 'cosine'], X_train, y_train)
+# Using find_best_parameter function to find the combination with the smallest MSE
+best_parameter = find_best_parameter(100, ['euclidean', 'manhattan', 'cosine'], X_train, y_train)
 
-# 训练 KNN 模型（使用合适的 k）
-print("正在训练 KNN 模型...")
-model = KNeighborsRegressor(n_neighbors=final_k_metric[1], weights='distance', metric=final_k_metric[0])
-# model = KNeighborsRegressor(n_neighbors=33, weights='distance', metric='manhattan')
+# Training KNN Model with the combination with the smallest MSE
+print("Training KNN Model...")
+model = KNeighborsRegressor(n_neighbors=best_parameter[1], weights='distance', metric=best_parameter[0])
 model.fit(X_train, y_train)
 
-# 预测
-print("正在预测测试集...")
+# Prediction
+print("Predicting...")
 y_pred = model.predict(X_test)
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 filename = f"y_pred_knn_merged_{timestamp}.npy"
 np.save(filename, y_pred)
 
-print(f"KNN模型预测完成，预测结果已保存到 y_pred_knn_merged_{timestamp}.npy，shape={y_pred.shape}")
+print(f"Prediction completed and the result has been saved to: y_pred_knn_merged_{timestamp}.npy, shape={y_pred.shape}")
 prepare_submission.prepareSubmission(y_pred, "../../submission_record", "knn")
