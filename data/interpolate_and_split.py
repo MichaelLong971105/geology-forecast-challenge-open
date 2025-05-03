@@ -146,6 +146,6 @@ def process_folder(path_to_process, output_file_name=None, DO_PLOT = False, my_r
 
 if __name__ == "__main__":
     my_rnd = random.Random(42)
-    process_folder(path_to_process='train_raw', output_file_name='train_2.csv', my_rnd=my_rnd)
+    process_folder(path_to_process='train_raw', output_file_name='train_raw.csv', my_rnd=my_rnd)
 
 
